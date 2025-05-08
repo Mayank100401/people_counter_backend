@@ -1,36 +1,47 @@
+import os
 from flask import Flask, jsonify
 from ultralytics import YOLO
-import cv2
-import threading
 
+# Create the Flask app
 app = Flask(__name__)
 
-people_count = 0
+# Load your model
+model = YOLO('yolov8n.pt')  # or your custom model
 
-model = YOLO('yolov8n.pt')  # use yolov8s.pt for better
+# Conditional Webcam Access
+USE_WEBCAM = os.environ.get('RAILWAY_ENVIRONMENT') != 'production'
 
-def detect_people():
-    global people_count
-    cap = cv2.VideoCapture(0)  # Use the default camera
+if USE_WEBCAM:
+    import cv2
+    cap = cv2.VideoCapture(0)
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            continue
-        
-        results = model.predict(source=frame, conf=0.5, classes=[0], verbose=False)
-        people_count = len(results[0].boxes)
-
-detect_thread = threading.Thread(target=detect_people)
-detect_thread.start()
+    if not cap.isOpened():
+        print("⚠️ Warning: Could not open webcam")
+    else:
+        print("✅ Webcam opened successfully")
 
 @app.route('/')
 def home():
-    return "People Counter is Running!"
+    return jsonify({"message": "Server is running 🚀"})
 
-@app.route('/count')
-def count():
-    return jsonify(count=people_count)
+@app.route('/predict')
+def predict():
+    if not USE_WEBCAM:
+        return jsonify({"error": "Webcam not available in production!"}), 400
 
+    ret, frame = cap.read()
+    if not ret:
+        return jsonify({"error": "Failed to capture image from webcam"}), 500
+
+    # Run YOLO prediction
+    results = model.predict(frame)
+
+    # For simplicity, return number of detections
+    return jsonify({
+        "detections": len(results)
+    })
+
+# Run Flask app (only locally, Railway will handle in production)
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=8080)
+
